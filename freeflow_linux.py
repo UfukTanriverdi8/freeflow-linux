@@ -79,7 +79,7 @@ Output rules:
 - Do not add words, names, or content that are not in the transcription. The context is only for correcting spelling of words already spoken.
 - Do not change the meaning of what was said."""
 
-SKIP_POST_PROCESSING = True  # set to True to skip LLM post-processing by default
+SKIP_POST_PROCESSING = False  # set to True to skip LLM post-processing by default
 STREAM_MODE_DEFAULT = "ondemand"  # "ondemand" (mic off when idle) or "persistent" (always-on stream)
 
 
@@ -354,7 +354,7 @@ def post_process(client: Groq, transcript: str, context: str = "") -> str:
     )
 
     response = client.chat.completions.create(
-        model="meta-llama/llama-4-scout-17b-16e-instruct",
+        model="openai/gpt-oss-120b",
         temperature=0.0,
         messages=[
             {"role": "system", "content": POST_PROCESSING_SYSTEM_PROMPT},
@@ -483,7 +483,7 @@ class FreeflowDaemon:
                 return
             print(f"[freeflow] Raw transcript: {raw!r}")
 
-            if SKIP_POST_PROCESSING := True:
+            if SKIP_POST_PROCESSING:
                 cleaned = raw
                 print("[freeflow] Skipping post-processing (SKIP_POST_PROCESSING=True) — using raw transcript")
             else:
