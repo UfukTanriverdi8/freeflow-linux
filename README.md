@@ -101,6 +101,8 @@ Config file: `~/.config/freeflow-linux/config.toml` (created automatically on fi
 api_key = "gsk_..."          # Groq API key (or use GROQ_API_KEY env var)
 hotkey = "KEY_RIGHTCTRL"     # Right Ctrl — change to KEY_F9 etc. if preferred
 language = "auto"            # "auto" to detect per utterance, or an ISO code like "en"/"tr"
+allowed_languages = ["en", "tr"]  # auto mode: detections outside this list are retried
+fallback_language = "en"          # language used for the retry
 # audio_device = ""          # Leave empty to use system default mic
 ```
 
@@ -113,6 +115,14 @@ utterance, so you can mix English and Turkish freely. Set it to a fixed ISO code
 (e.g. `language = "tr"`) to force one language and skip detection. The daemon prints
 the detected language to stdout on each utterance, which the systemd service captures
 in the journal (`journalctl --user -u freeflow-linux`).
+
+Whisper's language detection is unreliable on short clips and can lock onto a random
+language (e.g. Arabic) from a brief or near-silent utterance. To guard against that,
+`allowed_languages` lists the languages you actually speak. If a detection falls
+outside the list, the daemon retries once with `fallback_language`. With the defaults
+(`["en", "tr"]`, fallback `"en"`) a stray detection is re-transcribed as English
+instead of pasted as garbage. Set `allowed_languages = []` to disable the guard and
+accept whatever Whisper detects.
 
 ## Stream mode: on-demand vs persistent
 

@@ -31,6 +31,8 @@ Keys:
 - `api_key` — Groq API key (or `GROQ_API_KEY` env var)
 - `hotkey` — evdev key name, e.g. `KEY_RIGHTCTRL`, `KEY_F9`
 - `language` — `"auto"` (default, detect per utterance) or an ISO code like `"en"`/`"tr"`
+- `allowed_languages` — list of ISO codes (`["en", "tr"]` default); in auto mode a detection outside this list triggers a retry with `fallback_language`
+- `fallback_language` — ISO code used for the retry (`"en"` default)
 - `stream_mode` — `"ondemand"` (default) or `"persistent"`
 - `audio_device` — leave empty for system default, or `"pipewire"`
 - `api_base_url` — optional custom Groq endpoint

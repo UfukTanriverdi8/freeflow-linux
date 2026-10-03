@@ -61,6 +61,8 @@ DEFAULT_CONFIG = """\
 api_key = ""            # Groq API key (or set GROQ_API_KEY env var)
 hotkey = "KEY_RIGHTCTRL"  # Right Ctrl — change to KEY_F9 etc. if preferred
 language = "auto"       # "auto" to detect per utterance, or an ISO code like "en"/"tr"
+allowed_languages = ["en", "tr"]  # auto mode: detected languages outside this list are retried with fallback_language
+fallback_language = "en"          # language used for the retry (ISO code)
 # stream_mode = "ondemand"  # "ondemand" (mic off when idle) or "persistent" (always-on stream)
 # audio_device = ""    # Leave empty to use system default mic
 """
@@ -103,6 +105,16 @@ def load_config() -> dict:
     cfg.setdefault("hotkey", "KEY_RIGHTCTRL")
     cfg.setdefault("language", "auto")
     cfg["language"] = str(cfg["language"]).strip().lower()
+
+    allowed = cfg.get("allowed_languages", ["en", "tr"])
+    if not isinstance(allowed, list):
+        print("[freeflow] WARNING: allowed_languages must be a list, ignoring")
+        allowed = []
+    cfg["allowed_languages"] = [str(x).strip().lower() for x in allowed if str(x).strip()]
+
+    cfg.setdefault("fallback_language", "en")
+    cfg["fallback_language"] = str(cfg["fallback_language"]).strip().lower()
+
     cfg.setdefault("audio_device", None)
     cfg.setdefault("api_base_url", "")
 
@@ -340,7 +352,49 @@ class AudioRecorder:
 # Groq integration
 # ---------------------------------------------------------------------------
 
-def transcribe(client: Groq, audio_buf: io.BytesIO, language: str = "auto") -> str:
+# Whisper reports detected languages by full name (e.g. "Turkish"), while config
+# uses ISO-639-1 codes. This maps codes to the names Groq returns.
+LANGUAGE_NAMES = {
+    "en": "english", "zh": "chinese", "de": "german", "es": "spanish",
+    "ru": "russian", "ko": "korean", "fr": "french", "ja": "japanese",
+    "pt": "portuguese", "tr": "turkish", "pl": "polish", "ca": "catalan",
+    "nl": "dutch", "ar": "arabic", "sv": "swedish", "it": "italian",
+    "id": "indonesian", "hi": "hindi", "fi": "finnish", "vi": "vietnamese",
+    "he": "hebrew", "uk": "ukrainian", "el": "greek", "ms": "malay",
+    "cs": "czech", "ro": "romanian", "da": "danish", "hu": "hungarian",
+    "ta": "tamil", "no": "norwegian", "th": "thai", "ur": "urdu",
+    "hr": "croatian", "bg": "bulgarian", "lt": "lithuanian", "la": "latin",
+    "mi": "maori", "ml": "malayalam", "cy": "welsh", "sk": "slovak",
+    "te": "telugu", "fa": "persian", "lv": "latvian", "bn": "bengali",
+    "sr": "serbian", "az": "azerbaijani", "sl": "slovenian", "kn": "kannada",
+    "et": "estonian", "mk": "macedonian", "br": "breton", "eu": "basque",
+    "is": "icelandic", "hy": "armenian", "ne": "nepali", "mn": "mongolian",
+    "bs": "bosnian", "kk": "kazakh", "sq": "albanian", "sw": "swahili",
+    "gl": "galician", "mr": "marathi", "pa": "punjabi", "si": "sinhala",
+    "km": "khmer", "sn": "shona", "yo": "yoruba", "so": "somali",
+    "af": "afrikaans", "oc": "occitan", "ka": "georgian", "be": "belarusian",
+    "tg": "tajik", "sd": "sindhi", "gu": "gujarati", "am": "amharic",
+    "yi": "yiddish", "lo": "lao", "uz": "uzbek", "fo": "faroese",
+    "ht": "haitian creole", "ps": "pashto", "tk": "turkmen", "nn": "nynorsk",
+    "mt": "maltese", "sa": "sanskrit", "lb": "luxembourgish", "my": "myanmar",
+    "bo": "tibetan", "tl": "tagalog", "mg": "malagasy", "as": "assamese",
+    "tt": "tatar", "haw": "hawaiian", "ln": "lingala", "ha": "hausa",
+    "ba": "bashkir", "jw": "javanese", "su": "sundanese", "yue": "cantonese",
+}
+
+
+def _allowed_language_names(codes: list) -> set:
+    """Map configured ISO codes to the lowercase names Whisper reports."""
+    return {LANGUAGE_NAMES.get(code, code) for code in codes}
+
+
+def transcribe(
+    client: Groq,
+    audio_buf: io.BytesIO,
+    language: str = "auto",
+    allowed_names: set | None = None,
+    fallback_language: str = "en",
+) -> str:
     kwargs = {
         "model": "whisper-large-v3-turbo",
         "file": audio_buf,
@@ -349,8 +403,18 @@ def transcribe(client: Groq, audio_buf: io.BytesIO, language: str = "auto") -> s
     if language and language != "auto":
         kwargs["language"] = language
     result = client.audio.transcriptions.create(**kwargs)
-    if language == "auto":
-        print(f"[freeflow] Detected language: {getattr(result, 'language', 'unknown')}")
+
+    if language and language != "auto":
+        return result.text.strip()
+
+    detected = (getattr(result, "language", "") or "").strip()
+    print(f"[freeflow] Detected language: {detected or 'unknown'}")
+
+    if allowed_names and detected.lower() not in allowed_names:
+        print(f"[freeflow] '{detected}' outside allowed languages — retrying as '{fallback_language}'")
+        kwargs["language"] = fallback_language
+        result = client.audio.transcriptions.create(**kwargs)
+
     return result.text.strip()
 
 
@@ -443,6 +507,7 @@ class FreeflowDaemon:
             stream_mode=cfg.get("stream_mode", "ondemand"),
         )
         self._hotkey_code = resolve_hotkey(cfg["hotkey"])
+        self._allowed_names = _allowed_language_names(cfg.get("allowed_languages", []))
         self._session = get_session_type()
         self._recording = False
         self._lock = threading.Lock()
@@ -486,7 +551,13 @@ class FreeflowDaemon:
         context = get_context(self._session)
 
         try:
-            raw = transcribe(self._client, audio_buf, self._cfg["language"])
+            raw = transcribe(
+                self._client,
+                audio_buf,
+                self._cfg["language"],
+                self._allowed_names,
+                self._cfg["fallback_language"],
+            )
             if not raw:
                 print("[freeflow] Empty transcription — nothing to paste")
                 return
