@@ -165,6 +165,7 @@ After=graphical-session.target
 ExecStart=/path/to/freeflow-linux/.venv/bin/python /path/to/freeflow-linux/freeflow_linux.py
 Restart=on-failure
 RestartSec=3
+Environment=PYTHONUNBUFFERED=1
 Environment=XDG_SESSION_TYPE=x11
 Environment=DISPLAY=:0
 

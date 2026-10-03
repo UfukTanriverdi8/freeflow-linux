@@ -547,6 +547,10 @@ class FreeflowDaemon:
 # ---------------------------------------------------------------------------
 
 def main():
+    # Line-buffer stdout so prints reach the journal immediately when run as a
+    # systemd service (stdout is a pipe there, which Python otherwise block-buffers).
+    sys.stdout.reconfigure(line_buffering=True)
+
     parser = argparse.ArgumentParser(description="freeflow-linux voice dictation daemon")
     parser.add_argument("--dry-run", action="store_true", help="Check config/devices/session and exit")
     args = parser.parse_args()
