@@ -1,7 +1,7 @@
 # freeflow-linux
 
 > **Fork of [wolfgangmeyers/freeflow-linux](https://github.com/wolfgangmeyers/freeflow-linux)** (originally a Linux port of [FreeFlow](https://github.com/zachlatta/freeflow) by Zach Latta).
-> This fork adds on-demand mic streaming (privacy / zero-idle-CPU), WAV-based sound effects, and configurable stream modes.
+> This fork adds on-demand mic streaming (privacy / zero-idle-CPU), WAV-based sound effects, configurable stream modes, and per-utterance language auto-detection.
 
 Push-to-talk voice dictation for Linux using Groq Whisper + LLM post-processing.
 
@@ -100,10 +100,19 @@ Config file: `~/.config/freeflow-linux/config.toml` (created automatically on fi
 ```toml
 api_key = "gsk_..."          # Groq API key (or use GROQ_API_KEY env var)
 hotkey = "KEY_RIGHTCTRL"     # Right Ctrl — change to KEY_F9 etc. if preferred
+language = "auto"            # "auto" to detect per utterance, or an ISO code like "en"/"tr"
 # audio_device = ""          # Leave empty to use system default mic
 ```
 
 To find available hotkey names, run `evtest` and press the key you want.
+
+## Language
+
+By default `language = "auto"` lets Whisper detect the spoken language for each
+utterance, so you can mix English and Turkish freely. Set it to a fixed ISO code
+(e.g. `language = "tr"`) to force one language and skip detection. The daemon prints
+the detected language to stdout on each utterance, which the systemd service captures
+in the journal (`journalctl --user -u freeflow-linux`).
 
 ## Stream mode: on-demand vs persistent
 
