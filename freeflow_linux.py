@@ -60,6 +60,7 @@ DEFAULT_CONFIG = """\
 # freeflow-linux configuration
 api_key = ""            # Groq API key (or set GROQ_API_KEY env var)
 hotkey = "KEY_RIGHTCTRL"  # Right Ctrl — change to KEY_F9 etc. if preferred
+language = "auto"       # "auto" to detect per utterance, or an ISO code like "en"/"tr"
 # stream_mode = "ondemand"  # "ondemand" (mic off when idle) or "persistent" (always-on stream)
 # audio_device = ""    # Leave empty to use system default mic
 """
@@ -70,6 +71,7 @@ You are a dictation post-processor. You receive raw speech-to-text output and re
 Your job:
 - Remove filler words (um, uh, you know, like) unless they carry meaning.
 - Fix spelling, grammar, and punctuation errors.
+- Keep the transcript in its original language. Never translate it, and preserve non-English characters (e.g. Turkish ı ş ğ ç ö ü) exactly.
 - When the transcript already contains a word that is a close misspelling of a name or term from the context or custom vocabulary, correct the spelling. Never insert names or terms from context that the speaker did not say.
 - Preserve the speaker's intent, tone, and meaning exactly.
 
@@ -99,6 +101,8 @@ def load_config() -> dict:
         cfg["api_key"] = env_key
 
     cfg.setdefault("hotkey", "KEY_RIGHTCTRL")
+    cfg.setdefault("language", "auto")
+    cfg["language"] = str(cfg["language"]).strip().lower()
     cfg.setdefault("audio_device", None)
     cfg.setdefault("api_base_url", "")
 
@@ -336,12 +340,17 @@ class AudioRecorder:
 # Groq integration
 # ---------------------------------------------------------------------------
 
-def transcribe(client: Groq, audio_buf: io.BytesIO) -> str:
-    result = client.audio.transcriptions.create(
-        model="whisper-large-v3-turbo",
-        language="en",
-        file=audio_buf,
-    )
+def transcribe(client: Groq, audio_buf: io.BytesIO, language: str = "auto") -> str:
+    kwargs = {
+        "model": "whisper-large-v3-turbo",
+        "file": audio_buf,
+        "response_format": "verbose_json",
+    }
+    if language and language != "auto":
+        kwargs["language"] = language
+    result = client.audio.transcriptions.create(**kwargs)
+    if language == "auto":
+        print(f"[freeflow] Detected language: {getattr(result, 'language', 'unknown')}")
     return result.text.strip()
 
 
@@ -477,7 +486,7 @@ class FreeflowDaemon:
         context = get_context(self._session)
 
         try:
-            raw = transcribe(self._client, audio_buf)
+            raw = transcribe(self._client, audio_buf, self._cfg["language"])
             if not raw:
                 print("[freeflow] Empty transcription — nothing to paste")
                 return

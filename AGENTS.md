@@ -21,7 +21,7 @@ Single-file daemon (`freeflow_linux.py`). Key components:
   - `ondemand` (default): opens mic only during active recording, closes after. ~0% idle CPU.
   - `persistent`: stream always open, callback discards when not recording. ~3% idle CPU, zero startup latency.
 - **`FreeflowDaemon`** — asyncio event loop reading evdev keyboard events. On hotkey down, starts a 1s timer. On timer fire, calls `AudioRecorder.start_recording()`. On key up, calls `stop_recording()` → transcribe → paste.
-- **Transcription** — Groq `whisper-large-v3-turbo`. Post-processing via `llama-4-scout-17b-16e-instruct` (disabled by default via `SKIP_POST_PROCESSING = True`).
+- **Transcription** — Groq `whisper-large-v3-turbo`, language auto-detected per utterance by default (configurable via `language`). Post-processing via `openai/gpt-oss-120b` (enabled by default; set `SKIP_POST_PROCESSING = True` to disable).
 
 ## Config
 
@@ -30,6 +30,7 @@ Location: `~/.config/freeflow-linux/config.toml`
 Keys:
 - `api_key` — Groq API key (or `GROQ_API_KEY` env var)
 - `hotkey` — evdev key name, e.g. `KEY_RIGHTCTRL`, `KEY_F9`
+- `language` — `"auto"` (default, detect per utterance) or an ISO code like `"en"`/`"tr"`
 - `stream_mode` — `"ondemand"` (default) or `"persistent"`
 - `audio_device` — leave empty for system default, or `"pipewire"`
 - `api_base_url` — optional custom Groq endpoint
@@ -52,6 +53,6 @@ Currently copying to clipboard without pasting (paste commented out until ydotoo
 
 - 1s hold threshold prevents accidental triggers (pre-record beep at 0s, record-start beep at 1s)
 - stream opened on-demand by default for privacy/CPU — was persistent before, changed May 2026
-- Post-processing LLM disabled by default (raw transcription is good enough, and saves API cost)
+- Post-processing LLM enabled by default; set `SKIP_POST_PROCESSING = True` to disable (raw transcription is often good enough, and skipping saves API cost)
 - Context-gathering (active window title) is X11-only; Wayland has no equivalent API
 - Sound effects are WAV files in `sounds/`, played via `pw-play` subprocess — no Python audio processing for beeps
